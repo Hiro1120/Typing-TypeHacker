@@ -1,156 +1,177 @@
 // src/store.ts
 // -----------------------------------------------------------------------------
 // ゲーム全体の状態管理（Zustand）
-// ・phase: 画面遷移（title → ready → game → result）
-// ・timeAll: 全体残り秒数、timeOne: 個別問題の残り秒数（仕様で常に10秒）
-// ・ミス時は時間を減らさない（perfect だけ false にする）
-// ・次問への遷移条件は「正解で打ち切り」or「個別時間が0秒」
+// 変更点：
+// - フェーズを title → titleLang → ready → game → result に拡張
+// - モード選択（変数/メソッド/…）は廃止し、常に「ごちゃ混ぜ」固定
+// - 言語選択を追加（java 本実装、他はハリボテ）
+// - 準備画面に「戻る」ボタンを表示し、言語選択画面（titleLang）へ戻れる
+// - タイトルへ戻るで全体リセット
 // -----------------------------------------------------------------------------
 
 import { create } from "zustand";
-import { nextText } from "./data/java";
-import type { Mode } from "./data/java";
+import type { Language } from "./data/texts";
+import { nextTextByLanguage } from "./data/texts";
 
 // 画面フェーズ
-export type Phase = "title" | "ready" | "game" | "result";
+export type Phase = "title" | "titleLang" | "ready" | "game" | "result";
 
-// 状態
 type State = {
-  phase:   Phase;   // 現在の画面
-  mode:    Mode;    // 選択モード
-  text:    string;  // 現在の出題テキスト
-  pos:     number;  // 何文字正解済みか（カーソル位置）
-  timeAll: number;  // 全体残り時間(秒)
-  timeOne: number;  // 個別残り時間(秒) 仕様: 常に10秒リセット
-  score:   number;  // スコア（= 正解時に文字数加点）
-  perfect: boolean; // 現在の問題でミス無しなら true
+  phase: Phase;          // 現在の画面
+  language: Language;    // 選択中の言語
+  text: string;          // 現在の出題全文
+  pos: number;           // 正解済みの文字数
+  timeAll: number;       // 全体残り時間（秒）
+  timeOne: number;       // 個別残り時間（秒）
+  score: number;         // スコア
+  perfect: boolean;      // 現在の出題をミスなく進めているか
+  recent: string[];      // 直近の出題履歴（重複防止用）
 };
 
-// 操作（アクション）
 type Act = {
-  // タイトルでモード選択 → 準備画面へ
-  selectMode: (m: Mode) => void;
-  // 準備画面で Space → ゲーム開始
+  // タイトル1枚目 → 言語選択画面へ（サウンド許可後に呼ぶ）
+  enterLangSelect: () => void;
+  // 言語選択 → 準備画面へ
+  selectLanguage: (lang: Language) => void;
+  // 準備画面 → ゲーム開始
   start: () => void;
-  // 全体時間0で結果へ
+  // ゲーム → リザルト
   finish: () => void;
-  // タイトルへ戻る（タイマー等を完全初期化）
+  // リザルト or ゲーム → タイトル（完全リセット）
   backToTitle: () => void;
-  // 1打鍵判定（ゲーム中のみ有効）
+  // 準備画面の「戻る」→ 言語選択へ（選択状態は保持）
+  backToLang: () => void;
+  // キー入力（1文字）
   keyin: (ch: string) => void;
-  // 経過時間更新（ゲーム中のみ有効）
+  // 経過時間の進行
   tick: (dt: number) => void;
 };
 
-// 初期値
-const INIT_ALL_TIME = 60;
-const INIT_ONE_TIME = 10;
+// 定数（必要に応じて調整）
+const INIT_ALL_TIME = 120;
+const INIT_ONE_TIME = 20;
+const RECENT_LIMIT = 5; // 直近5問は出さない
+
+// 直近重複を避ける出題
+function nextUniqueText(lang: Language, recent: string[]): string {
+  let tries = 0;
+  while (tries++ < 50) {
+    const t = nextTextByLanguage(lang);
+    if (!recent.includes(t)) return t;
+  }
+  // どうしても避けられなければ最後に許容
+  return nextTextByLanguage(lang);
+}
 
 export const useGame = create<State & Act>()((set, get) => ({
-  // --- 初期状態 ---
-  phase:   "title",
-  mode:    "mix",
-  text:    "",
-  pos:     0,
+  // 初期状態
+  phase: "title",
+  language: "java",
+  text: "",
+  pos: 0,
   timeAll: INIT_ALL_TIME,
   timeOne: INIT_ONE_TIME,
-  score:   0,
+  score: 0,
   perfect: true,
+  recent: [],
 
-  // --- タイトル → 準備 ---
-  // （ここではタイマーは動かさない。実際の初期化は start() で行う）
-  selectMode: (m) => set({ phase: "ready", mode: m }),
+  // タイトル → 言語選択
+  enterLangSelect: () => set({ phase: "titleLang" }),
 
-  // --- 準備 → ゲーム開始 ---
+  // 言語選択 → 準備
+  selectLanguage: (lang) => set({ language: lang, phase: "ready" }),
+
+  // 準備 → ゲーム開始（各タイマーとスコアをリセット）
   start: () =>
     set({
-      phase:   "game",
-      text:    nextText(get().mode), // モードに応じた新規出題
-      pos:     0,
-      timeAll: INIT_ALL_TIME,        // 全体60秒にリセット
-      timeOne: INIT_ONE_TIME,        // 個別10秒にリセット
-      score:   0,
-      perfect: true,
-    }),
-
-  // --- 全体時間0 → 結果 ---
-  finish: () => set({ phase: "result" }),
-
-  // --- タイトルへ戻る（完全初期化）---
-  // ※ ここで phase="title" にしておけば、tick は即 return するため
-  //    戻った直後に勝手に時間が減ることはない
-  backToTitle: () =>
-    set({
-      phase:   "title",
-      text:    "",
-      pos:     0,
+      phase: "game",
+      text: nextUniqueText(get().language, get().recent),
+      pos: 0,
       timeAll: INIT_ALL_TIME,
       timeOne: INIT_ONE_TIME,
-      score:   0,
+      score: 0,
       perfect: true,
-      // mode は保持（タイトルで再選択可）
+      recent: get().recent, // ここでは履歴はまだ触らない
     }),
 
-  // --- キー入力判定（ゲーム中のみ）---
-  keyin: (ch) => {
-    if (get().phase !== "game") return; // それ以外は無視
+  // ゲーム → リザルト
+  finish: () => set({ phase: "result" }),
 
-    const { text, pos, score, perfect } = get();
+  // どこからでも → タイトル（完全リセット）
+  backToTitle: () =>
+    set({
+      phase: "title",
+      language: "java",
+      text: "",
+      pos: 0,
+      timeAll: INIT_ALL_TIME,
+      timeOne: INIT_ONE_TIME,
+      score: 0,
+      perfect: true,
+      recent: [],
+    }),
+
+  // 準備 → 言語選択（選択内容は保持したまま戻る）
+  backToLang: () => set({ phase: "titleLang" }),
+
+  // 入力判定（ミス時に時間は減らさない仕様）
+  keyin: (ch) => {
+    if (get().phase !== "game") return;
+
+    const { text, pos, score, perfect, language, recent } = get();
 
     if (text[pos] === ch) {
-      // 正しい打鍵
       const nextPos = pos + 1;
 
+      // 問題を最後まで正解したら次問へ
       if (nextPos === text.length) {
-        // すべて正解 → 次の出題へ（個別10秒リセット、全体+3秒）
+        // 履歴を更新（直近RECENT_LIMIT件を保持）
+        const newRecent = [text, ...recent].slice(0, RECENT_LIMIT);
+
         set({
-          score:   score + text.length,
-          timeAll: get().timeAll + 3,
+          score: score + text.length,
+          timeAll: get().timeAll + 3, // パーフェクト時ボーナスは別途付けたいならここで調整
           timeOne: INIT_ONE_TIME,
-          text:    nextText(get().mode),
-          pos:     0,
-          perfect, // 維持（ミスが無ければ true のまま）
+          text: nextUniqueText(language, newRecent),
+          pos: 0,
+          perfect, // perfectはミス時にのみfalseにする
+          recent: newRecent,
         });
       } else {
-        // まだ途中 → カーソルを進める
         set({ pos: nextPos });
       }
     } else {
-      // ミス：時間は減らさない仕様（変更点）
-      //       次問への遷移条件は満たさないので進まない
-      set({ perfect: false });
+      // ミス時：時間は減らない。perfect だけ崩す
+      if (perfect) set({ perfect: false });
     }
   },
 
-  // --- 経過時間更新（ゲーム中のみ）---
+  // 経過時間管理（個別タイム切れは次問へ）
   tick: (dt) => {
-    if (get().phase !== "game") return; // title / ready / result では何もしない
+    if (get().phase !== "game") return;
 
-    const newAll = get().timeAll - dt; // 全体時間を減算
-    const newOne = get().timeOne - dt; // 個別時間を減算
+    const newAll = get().timeAll - dt;
+    const newOne = get().timeOne - dt;
 
-    // 全体0秒 → 結果へ
     if (newAll <= 0) {
       get().finish();
       return;
     }
 
-    // 個別0秒 → 強制で次問（全体 -2秒のペナルティは維持）
     if (newOne <= 0) {
+      // 個別時間切れ → 強制で次問。履歴も更新。
+      const { text, language, recent } = get();
+      const newRecent = [text, ...recent].slice(0, RECENT_LIMIT);
       set({
-        timeAll: newAll - 2,            // 罰則（仕様どおり保持）
-        timeOne: INIT_ONE_TIME,         // 個別を10秒にリセット
-        text:    nextText(get().mode),  // 次の出題
-        pos:     0,
-        perfect: true,                  // 新問はパーフェクト状態から
+        timeAll: newAll,
+        timeOne: INIT_ONE_TIME,
+        text: nextUniqueText(language, newRecent),
+        pos: 0,
+        recent: newRecent,
+        perfect: true, // 新問はまたperfectに戻す
       });
-      return;
+    } else {
+      set({ timeAll: newAll, timeOne: newOne });
     }
-
-    // 通常減算（まだどちらも0未満でない場合）
-    set({
-      timeAll: newAll,
-      timeOne: newOne,
-    });
   },
 }));
