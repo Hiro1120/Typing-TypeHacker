@@ -48,12 +48,12 @@ function enableVideoBGM() {
 
 // UI表記（言語ラベル）
 const LANG_LABEL: Record<Language, string> = {
-  java: "Java（実装済み）",
-  php: "PHP（ハリボテ）",
-  js: "JavaScript（ハリボテ）",
-  html: "HTML（ハリボテ）",
-  sql: "SQL（ハリボテ）",
-  linux: "Linux（ハリボテ）",
+  java: "Java",
+  php: "PHP",
+  js: "JavaScript",
+  html: "HTML",
+  sql: "SQL",
+  linux: "Linux",
 };
 
 export default function App() {
@@ -120,101 +120,67 @@ export default function App() {
 
   // ---------------- 画面分岐 ----------------
 
-  // タイトル（背景動画あり。初期は muted で自動再生）
-  if (phase === "title") {
-    return (
-      <div className="min-h-screen w-full relative overflow-hidden">
-        {/* 背景動画: data-bgm を付与してターゲットにする。初期は muted で autoplay */}
-        <video
-          className="absolute inset-0 w-full h-full object-cover"
-          src="/video/title.mp4"
-          autoPlay
-          muted
-          playsInline
-          loop
-          preload="auto"
-          data-bgm
-        />
-        {/* 前景UI */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 p-6
-                        text-white backdrop-brightness-75">
-          <h1 className="text-4xl font-extrabold drop-shadow">Typing-TypeHacker</h1>
-          <button
-            onClick={onPlayButton}
-            className="px-6 py-3 rounded-xl bg-amber-400 text-black font-extrabold shadow
-                       hover:brightness-110 active:translate-y-[2px]"
-          >
-            Typing-TypeHacker をプレイ
-          </button>
-        </div>
-      </div>
-    );
-  }
+ // タイトル／言語選択／準備（共通の背景動画を1枚だけ使う）
+if (phase === "title" || phase === "titleLang" || phase === "ready") {
+  return (
+    <div className="min-h-screen w-full relative overflow-hidden">
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        src="/video/title.mp4"
+        autoPlay
+        muted={phase === "title"}   // 初回のみミュート。プレイ押下で enableVideoBGM() が解除
+        playsInline
+        loop
+        preload="auto"
+        data-bgm
+      />
 
-  // 言語選択（同じ背景動画を継続表示。プレイ押下後はすでに unmute 済み）
-  if (phase === "titleLang") {
-    return (
-      <div className="min-h-screen w-full relative overflow-hidden">
-        <video
-          className="absolute inset-0 w-full h-full object-cover"
-          src="/video/title.mp4"
-          autoPlay
-          muted
-          playsInline
-          loop
-          preload="auto"
-          data-bgm
-        />
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6
-                        text-white backdrop-brightness-75">
-          <h2 className="text-3xl font-bold drop-shadow mb-2">言語を選択</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
-            <button className="btn" onClick={choose("java")}>{LANG_LABEL["java"]}</button>
-            <button className="btn" onClick={choose("php")}>{LANG_LABEL["php"]}</button>
-            <button className="btn" onClick={choose("js")}>{LANG_LABEL["js"]}</button>
-            <button className="btn" onClick={choose("html")}>{LANG_LABEL["html"]}</button>
-            <button className="btn" onClick={choose("sql")}>{LANG_LABEL["sql"]}</button>
-            <button className="btn" onClick={choose("linux")}>{LANG_LABEL["linux"]}</button>
+      {/* 前景UI */}
+      {phase === "title" && (
+        <div className="absolute inset-0 flex items-center justify-center text-white backdrop-brightness-75">
+          <div className="title-box">
+            <h1 className="text-4xl font-extrabold drop-shadow">Typing-TypeHacker</h1>
+            <button onClick={onPlayButton} className="btn-flat">
+              <span>Typing-TypeHacker をプレイ</span>
+            </button>
           </div>
-          <button
-            className="mt-4 px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30"
-            onClick={backToTitle}
-          >
-            タイトルへ戻る
-          </button>
-          <style>{`
-            .btn{
-              padding:.6rem 1.1rem; border-radius:.9rem;
-              background:#2563eb; color:#fff; font-weight:800;
-              box-shadow:0 8px 0 rgba(0,0,0,.18);
-              transition:transform .08s ease, box-shadow .08s ease, filter .1s ease;
-            }
-            .btn:active{ transform:translateY(2px); box-shadow:0 6px 0 rgba(0,0,0,.18); }
-            .btn:hover{ filter:brightness(1.08); }
-          `}</style>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  // 準備
-  if (phase === "ready") {
-    return (
-      <div className="min-h-screen bg-zinc-900 text-white flex flex-col items-center justify-center gap-6">
-        <div className="text-xl opacity-80">選択言語</div>
-        <div className="text-5xl font-extrabold">
-          {LANG_LABEL[language]}
+      {phase === "titleLang" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6 text-white backdrop-brightness-75">
+          <div className="title-box">
+            <h2 className="text-3xl font-bold drop-shadow mb-2">モードを選択</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+              <button className="btn-flat" onClick={choose("java")}><span>{LANG_LABEL["java"]}</span></button>
+              <button className="btn-flat" onClick={choose("php")}><span>{LANG_LABEL["php"]}</span></button>
+              <button className="btn-flat" onClick={choose("js")}><span>{LANG_LABEL["js"]}</span></button>
+              <button className="btn-flat" onClick={choose("html")}><span>{LANG_LABEL["html"]}</span></button>
+              <button className="btn-flat" onClick={choose("sql")}><span>{LANG_LABEL["sql"]}</span></button>
+              <button className="btn-flat" onClick={choose("linux")}><span>{LANG_LABEL["linux"]}</span></button>
+            </div>
+            <button className="mt-4 px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30" onClick={backToTitle}>
+              タイトルへ戻る
+            </button>
+          </div>
         </div>
-        <p className="text-lg">スペースキーでゲーム開始</p>
-        <button
-          className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25"
-          onClick={backToLang}
-        >
-          戻る（言語選択へ）
-        </button>
-      </div>
-    );
-  }
+      )}
+
+      {phase === "ready" && (
+        <div className="absolute inset-0 flex items-center justify-center text-white backdrop-brightness-75">
+          <div className="title-box">
+            <div className="text-xl font-extrabold text-white">選択モード</div>
+            <div className="mode-title">{LANG_LABEL[language]}</div>
+            <p className="text-lg"><span className="keycap">スペースキー</span>でゲーム開始</p>
+            <button className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30" onClick={backToLang}>
+              モード選択へ戻る
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
   // リザルト
   if (phase === "result") {
